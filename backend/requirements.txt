@@ -9,4 +9,8 @@ anthropic>=0.40.0
 httpx>=0.27.0
 python-multipart==0.0.19
 # Локальная расшифровка голосовых (TRANSCRIBE_PROVIDER=local)
-faster-whisper==1.1.0
+faster-whisper==1.2.1
+# faster-whisper использует requests, но не всегда ставит его сам
+requests>=2.31
+# av 19+ несовместим с faster-whisper (ошибка metadata_errors при чтении аудио)
+av==18.1.0

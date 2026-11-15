@@ -3,6 +3,7 @@ import base64
 import logging
 from dataclasses import dataclass, field
 
+import anthropic
 from anthropic import AsyncAnthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +50,25 @@ def client() -> AsyncAnthropic:
     if _client is None:
         _client = AsyncAnthropic(api_key=settings.anthropic_api_key)
     return _client
+
+
+def api_error_text(e: Exception) -> str:
+    """Понятное сообщение вместо падения, если Claude API вернул ошибку."""
+    msg = str(getattr(e, "message", e)).lower()
+    if "credit balance" in msg:
+        return ("⚠️ На балансе Claude API закончились кредиты. Пополните его в console.anthropic.com → "
+                "Plans & Billing. Записи в мини-приложении работают и без ассистента.")
+    if isinstance(e, anthropic.AuthenticationError):
+        return "⚠️ Неверный ANTHROPIC_API_KEY. Проверьте ключ в .env и перезапустите бэкенд."
+    if isinstance(e, anthropic.PermissionDeniedError):
+        return "⚠️ У ключа API нет доступа к этой модели. Проверьте CLAUDE_MODEL в .env."
+    if isinstance(e, anthropic.NotFoundError):
+        return "⚠️ Модель не найдена. Проверьте CLAUDE_MODEL в .env."
+    if isinstance(e, anthropic.RateLimitError):
+        return "⏳ Слишком много запросов к Claude. Подождите минуту и повторите."
+    if isinstance(e, (anthropic.InternalServerError, anthropic.APIConnectionError)):
+        return "⏳ Claude временно недоступен. Попробуйте чуть позже."
+    return f"⚠️ Ошибка Claude API: {getattr(e, 'message', e)}"
 
 
 @dataclass
@@ -121,10 +141,17 @@ async def run_agent(
     final_text = ""
 
     for _ in range(8):
-        resp = await client().messages.create(
-            model=settings.claude_model, max_tokens=settings.claude_max_tokens,
-            system=system, tools=TOOLS, messages=messages,
-        )
+        try:
+            resp = await client().messages.create(
+                model=settings.claude_model, max_tokens=settings.claude_max_tokens,
+                system=system, tools=TOOLS, messages=messages,
+            )
+        except anthropic.APIError as e:
+            log.error("Claude API error: %s", e)
+            if actions:  # часть действий уже выполнена — сообщаем об этом
+                done = ", ".join(a["tool"] for a in actions)
+                return AgentResult(f"{api_error_text(e)}\n\nУспел выполнить: {done}.", actions)
+            return AgentResult(api_error_text(e), actions)
         messages.append({"role": "assistant", "content": resp.content})
         text_parts = [b.text for b in resp.content if b.type == "text"]
         if text_parts:
@@ -159,11 +186,15 @@ async def simple_completion(session: AsyncSession, user: User, instruction: str)
     """Ответ без инструментов — для вечернего разбора и мотивационных сообщений."""
     if not settings.anthropic_api_key:
         return ""
-    resp = await client().messages.create(
-        model=settings.claude_model, max_tokens=800,
-        system=await build_system(session, user),
-        messages=[{"role": "user", "content": instruction}],
-    )
+    try:
+        resp = await client().messages.create(
+            model=settings.claude_model, max_tokens=800,
+            system=await build_system(session, user),
+            messages=[{"role": "user", "content": instruction}],
+        )
+    except anthropic.APIError as e:
+        log.error("Claude API error: %s", e)
+        return ""
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 

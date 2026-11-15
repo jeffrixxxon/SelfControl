@@ -119,7 +119,7 @@ async def report_cmd(message: Message, bot: Bot):
     async with SessionLocal() as session:
         user = await get_or_create_user(session, message.from_user.id)
         text = await assistant.simple_completion(session, user, assistant.DAILY_REPORT_PROMPT)
-    await reply(message, text or "Ассистент не настроен.")
+    await reply(message, text or "Claude сейчас недоступен (проверьте ключ и баланс API в логах бэкенда).")
 
 
 @router.message(F.voice | F.audio | F.video_note)

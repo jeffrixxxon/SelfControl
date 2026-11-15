@@ -1,3 +1,4 @@
+import logging
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -13,6 +14,7 @@ from ..services.assistant import Attachment
 from ..services.transcribe import transcribe
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 ALLOWED_UPLOADS = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
 
@@ -90,7 +92,13 @@ async def upload(file: UploadFile = File(...), message: str = Form(""), user: Us
     data = await file.read()
     ctype = (file.content_type or "").lower()
     if ctype.startswith("audio/"):
-        text = await transcribe(data, file.filename or "voice.webm")
+        try:
+            text = await transcribe(data, file.filename or "voice.webm")
+        except Exception as e:  # noqa: BLE001
+            log.exception("transcribe failed")
+            raise HTTPException(502, f"Не удалось расшифровать голосовое: {e.__class__.__name__}")
+        if not text:
+            raise HTTPException(422, "Ничего не расслышал — попробуйте ещё раз")
         res = await assistant.run_agent(session, user, text, source="voice")
         return {"transcript": text, "reply": res.text, "actions": [a["tool"] for a in res.actions]}
     if ctype not in ALLOWED_UPLOADS:
