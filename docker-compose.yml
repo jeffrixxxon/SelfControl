@@ -18,7 +18,11 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://selfcontrol:${POSTGRES_PASSWORD}@db:5432/selfcontrol
+      # Адрес базы собирается в коде из этих параметров, поэтому пароль может содержать любые символы
+      DATABASE_URL: ""
+      POSTGRES_HOST: db
+      POSTGRES_USER: selfcontrol
+      POSTGRES_DB: selfcontrol
     volumes:
       - appdata:/data   # кэш модели Whisper
     depends_on:

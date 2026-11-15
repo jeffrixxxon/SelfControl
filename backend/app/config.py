@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     # Пусто = бот открыт для всех. Иначе список Telegram ID через запятую.
     allowed_user_ids: str = ""
 
-    # База
-    database_url: str = "sqlite+aiosqlite:///./selfcontrol.db"
+    # База. Либо готовая строка DATABASE_URL, либо параметры POSTGRES_* (пароль может содержать любые символы)
+    database_url: str = ""
+    postgres_host: str = ""
+    postgres_port: int = 5432
+    postgres_user: str = "selfcontrol"
+    postgres_password: str = ""
+    postgres_db: str = "selfcontrol"
 
     # Claude
     anthropic_api_key: str = ""
@@ -33,6 +38,18 @@ class Settings(BaseSettings):
     # Разработка: при DEBUG=true и DEV_TG_ID API работает без Telegram initData
     debug: bool = False
     dev_tg_id: int = 0
+
+    @property
+    def db_url(self):
+        if self.database_url:
+            return self.database_url
+        if self.postgres_host:
+            from sqlalchemy.engine import URL
+
+            # URL.create сам экранирует спецсимволы в пароле (@ # / : ? %)
+            return URL.create("postgresql+asyncpg", username=self.postgres_user, password=self.postgres_password,
+                              host=self.postgres_host, port=self.postgres_port, database=self.postgres_db)
+        return "sqlite+aiosqlite:///./selfcontrol.db"
 
     @property
     def allowed_ids(self) -> set[int]:
