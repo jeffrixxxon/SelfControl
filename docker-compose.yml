@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: selfcontrol
+      POSTGRES_USER: selfcontrol
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U selfcontrol"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://selfcontrol:${POSTGRES_PASSWORD}@db:5432/selfcontrol
+    volumes:
+      - appdata:/data   # кэш модели Whisper
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./webapp
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  appdata:
+  caddy_data:
